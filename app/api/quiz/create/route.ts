@@ -1,17 +1,37 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Supabaseクライアントをサーバーサイドで作成
+// Supabase クライアントをサーバー側で作成
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_KEY!
 );
 
-// POSTリクエストでクイズを登録
+// ✅ クライアントのIPアドレスを取得する関数
+const getClientIp = (req: Request) => {
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) {
+    return forwarded.split(',')[0]; // 複数ある場合は最初のものを取得
+  }
+  return req.headers.get('host') || 'unknown';
+};
+
+// ✅ ローカルIPチェック
+const isLocalRequest = (ip: string) => {
+  return ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.');
+};
+
+// クイズ作成 (POST)
 export async function POST(req: Request) {
+  const clientIp = getClientIp(req);
+
+  // 🌟 もしリクエスト元がローカルでなければ拒否
+  if (!isLocalRequest(clientIp)) {
+    return NextResponse.json({ error: 'このAPIはローカル環境でのみ利用可能です' }, { status: 403 });
+  }
+
   try {
     const { questionText, options } = await req.json();
-
     if (!questionText || options.length < 2) {
       return NextResponse.json({ error: '質問と最低2つの選択肢が必要です' }, { status: 400 });
     }
@@ -22,7 +42,7 @@ export async function POST(req: Request) {
       .insert([{ question_text: questionText }])
       .select();
 
-    if (questionError || !questionData) {
+    if (questionError) {
       return NextResponse.json({ error: '質問の登録に失敗しました' }, { status: 500 });
     }
 
